@@ -4,9 +4,12 @@ pub mod convolution;
 pub mod dense;
 pub mod hadamard;
 pub mod matvec;
+pub mod matmat;
 pub mod pooling;
 pub mod requant;
 pub mod reshape;
+pub mod base;
+pub mod mle_test;
 
 use anyhow::Result;
 use ff_ext::ExtensionField;

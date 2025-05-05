@@ -13,7 +13,7 @@ cfg_if::cfg_if! {
   if #[cfg(feature = "flamegraph")] {
     criterion_group! {
       name = keccak256;
-      config = Criterion::default().warm_up_time(Duration::from_millis(3000)).with_profiler(pprof::criterion::PProfProfiler::new(100, pprof::criterion::Output::Flamegraph(None)));
+      config = Criterion::default().warm_up_time(Duration::from_millis(3000));
       targets = bench_keccak256
     }
   } else {
