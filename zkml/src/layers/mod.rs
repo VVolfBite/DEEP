@@ -5,6 +5,7 @@ pub mod dense;
 pub mod hadamard;
 pub mod matvec;
 pub mod matmat;
+pub mod mattranspose;
 pub mod pooling;
 pub mod requant;
 pub mod reshape;
