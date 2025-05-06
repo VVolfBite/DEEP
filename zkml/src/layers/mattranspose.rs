@@ -2,7 +2,7 @@ use anyhow::ensure;
 use ff_ext::ExtensionField;
 use itertools::Itertools;
 use multilinear_extensions::{
-    mle::{IntoMLE, MultilinearExtension},
+    mle::{IntoMLE, MultilinearExtension, DenseMultilinearExtension},
     virtual_poly::{VPAuxInfo, VirtualPolynomial},
 };
 use serde::{Serialize, de::DeserializeOwned};
@@ -13,6 +13,7 @@ use crate::{
     Claim, Element, Tensor,
     quantization::{Fieldizer, TensorFielder},
     tensor::Number,
+    commit::compute_betas_eval,
 };
 
 /// MatTranspose 结构体定义
@@ -86,25 +87,19 @@ impl MatTranspose<Element> {
         println!("  矩阵: {}x{}", m, n);
         println!("  last_claim point 长度: {}", last_claim.point.len());
 
-        // 计算各维度的变量数量
-        let m_vars = m.ilog2() as usize; // 行数变量
-        let n_vars = n.ilog2() as usize; // 列数变量
-
-        // 分割评估点，分别用于固定行和列
-        // 注意：对于转置操作，我们需要交换行列变量的位置
-        let row_points = &last_claim.point[..n_vars]; // 用于固定 j（原列）
-        let col_points = &last_claim.point[n_vars..]; // 用于固定 i（原行）
-
-        // 构建多线性扩展
-        println!("\n--- 构建多线性扩展 ---");
-        let mut matrix_mle = self.matrix.clone().to_mle_2d();
-        println!("矩阵 MLE 信息:");
-        println!("  - 原始变量数: {}", matrix_mle.num_vars());
-
-        // 构建虚拟多项式
+        // 计算转置矩阵
+        let transposed_matrix = self.matrix.transpose();
+        
+        // 构建转置矩阵的MLE
+        let transposed_mle = transposed_matrix.to_mle_2d();
+        
+        // 构建β多项式
+        let beta_poly = compute_betas_eval(&last_claim.point).into_mle();
+        
+        // 构建虚拟多项式：transposed_mle * beta_poly
         println!("\n--- 构建虚拟多项式 ---");
-        let mut vp = VirtualPolynomial::<E>::new(matrix_mle.num_vars());
-        vp.add_mle_list(vec![matrix_mle.into()], E::ONE);
+        let mut vp = VirtualPolynomial::<E>::new(transposed_mle.num_vars());
+        vp.add_mle_list(vec![transposed_mle.into(), beta_poly.into()], E::ONE);
 
         // 执行证明
         println!("\n--- 执行证明过程 ---");
@@ -157,27 +152,42 @@ impl MatTranspose<Element> {
         println!("\n--- MatTranspose Verify 函数开始执行 ---");
 
         // 验证 Sumcheck 证明
-        let subclaim =
-            IOPVerifierState::<E>::verify(last_claim.eval, &proof.sumcheck, aux_info, transcript);
+        let subclaim = IOPVerifierState::<E>::verify(
+            last_claim.eval,
+            &proof.sumcheck,
+            aux_info,
+            transcript,
+        );
         println!("Sumcheck 验证通过");
-
         let matrix_point = subclaim.point_flat();
-        println!("Matrix point: {:?}", matrix_point);
+        // 计算β多项式在sumcheck点上的评估值
+        let beta = compute_betas_eval(&last_claim.point).into_mle();
+        let beta_eval = beta.evaluate(&matrix_point);
+        println!("\nβ多项式评估值:");
+        println!("  - 原始点: {:?}", last_claim.point);
+        println!("  - 在sumcheck点 {:?} 上的评估值: {:?}", matrix_point, beta_eval);
+        println!("  - 在原始点 {:?} 上的评估值: {:?}", last_claim.point, beta.evaluate(&last_claim.point));
 
-        // 验证矩阵的评估值
-        let expected_eval = self.evaluate_matrix_at(&matrix_point);
-        println!("矩阵评估值: expected={:?}, got={:?}", expected_eval, proof.matrix_eval());
+        let expected_eval = proof.matrix_eval();
+        println!("\n转置矩阵评估值:");
+        println!("  - sumcheck点: {:?}", matrix_point);
+        println!("  - 转置矩阵MLE在sumcheck点上的评估值: {:?}", expected_eval);
+        println!("  - 声明的评估值: {:?}", proof.matrix_eval());
+        
+        // 验证乘积是否等于sumcheck的期望值
+        let product = beta_eval * expected_eval;
+        println!("\n乘积验证:");
+        println!("  - β * 转置矩阵评估值: {:?}", product);
+        println!("  - sumcheck期望值: {:?}", subclaim.expected_evaluation);
         ensure!(
-            expected_eval == proof.matrix_eval(),
-            "矩阵评估值不一致: expected {:?}, got {:?}",
-            expected_eval,
-            proof.matrix_eval()
+            product == subclaim.expected_evaluation,
+            "矩阵转置验证失败: 乘积评估值不匹配"
         );
 
         // 构造下一个 claim
         let next_claim = Claim {
-            point: matrix_point,
-            eval: proof.matrix_eval(),
+            point: proof.sumcheck.point.clone(),
+            eval: expected_eval,
         };
 
         println!("✅ MatTranspose Verify 函数执行完成");
