@@ -49,10 +49,11 @@ impl MatTranspose<Element> {
     pub fn aux_info<E: ExtensionField>(&self) -> VPAuxInfo<E> {
         let m_vars = self.matrix.nrows_2d().ilog2() as usize; // 行数变量
         let n_vars = self.matrix.ncols_2d().ilog2() as usize; // 列数变量
-        VPAuxInfo::<E>::from_mle_list_dimensions(&vec![
-            vec![m_vars, n_vars],
-            vec![m_vars, n_vars],
-        ])
+        VPAuxInfo::<E>::from_mle_list_dimensions(&vec![vec![
+            // m1, beta
+            m_vars+n_vars,
+            n_vars+m_vars,
+        ]])
     }
 
     /// 在给定点评估矩阵
@@ -247,7 +248,7 @@ mod test {
         println!("\n验证过程:");
         let input_claim = mattranspose
             .verify(
-                &mut transcript,
+                &mut default_transcript(),
                 &output_claim,
                 &proof,
                 &mattranspose.aux_info(),
