@@ -194,6 +194,7 @@ impl MatMat<Element> {
         println!("Sumcheck 验证通过");
 
         let matrix_point = subclaim.point_flat();
+        println!("Sumcheck point: {:?}", proof.sumcheck.point);
         println!("Matrix point: {:?}", matrix_point);
         ensure!(
             matrix_point.len() == self.matrix_left.ncols_2d().ilog2() as usize,
